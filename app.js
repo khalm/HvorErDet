@@ -6,7 +6,8 @@
   'use strict';
 
   // ---------- Innstillinger (lagres lokalt på telefonen) ----------
-  const DEFAULTS = { radius: 150, fov: 55, offset: 0, hideBehind: true, aim: 4 };
+  const APP_VERSION = '4';
+  const DEFAULTS = { radius: 150, lensFov: 67, offset: 0, hideBehind: true, aim: 4, autoCompass: true, calibrated: false };
   const settings = loadSettings();
 
   function loadSettings() {
@@ -29,12 +30,15 @@
     frozen: false,
     source: '',
     visible: [],
+    zoom: 1,              // kameraets zoom (1 = vanlig)
+    screenFov: null,
   };
 
   const $ = (id) => document.getElementById(id);
   const video = $('video');
 
   // ---------- Oppstart ----------
+  document.querySelectorAll('.app-version').forEach((el) => { el.textContent = 'Versjon ' + APP_VERSION; });
   $('startBtn').addEventListener('click', start);
 
   async function start() {
@@ -79,6 +83,14 @@
     });
     video.srcObject = stream;
     await video.play().catch(() => {});
+    // Sørg for vanlig zoom (1x), og les av zoomen hvis telefonen oppgir den
+    const track = stream.getVideoTracks()[0];
+    try {
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      if (caps.zoom && caps.zoom.min <= 1 && caps.zoom.max >= 1) await track.applyConstraints({ advanced: [{ zoom: 1 }] });
+      const st = track.getSettings ? track.getSettings() : {};
+      if (st.zoom) state.zoom = st.zoom;
+    } catch { /* ikke støttet – bruk 1x */ }
   }
 
   // ---------- Kompass ----------
@@ -125,13 +137,17 @@
     // Kameraets z-komponent i verden er −cos(beta)·cos(gamma).
     const d = Math.PI / 180;
     const p = Math.asin(Math.max(-1, Math.min(1, -Math.cos(beta * d) * Math.cos(gamma * d)))) / d;
-    state.pitch = state.pitch == null ? p : state.pitch * 0.8 + p * 0.2;
+    state.pitch = state.pitch == null ? p
+      : state.pitch + (p - state.pitch) * Math.min(1, 0.25 + Math.abs(p - state.pitch) / 6);
 
-    // Glatt ut retningen (sirkulært gjennomsnitt) så labelene ikke hopper
+    // Glatt ut retningen: mye utjevning når telefonen står stille (mot skjelving),
+    // nesten ingen når du snur deg (så labelene følger kameraet uten forsinkelse).
     const rad = h * Math.PI / 180;
-    const k = 0.2;
     if (!haveSmooth) { smoothSin = Math.sin(rad); smoothCos = Math.cos(rad); haveSmooth = true; }
     else {
+      const cur = Math.atan2(smoothSin, smoothCos) * 180 / Math.PI;
+      const jump = Math.abs(angleDiff(h, cur));
+      const k = Math.min(1, 0.25 + jump / 6);
       smoothSin = smoothSin * (1 - k) + Math.sin(rad) * k;
       smoothCos = smoothCos * (1 - k) + Math.cos(rad) * k;
     }
@@ -150,21 +166,106 @@
     return { heading: norm360(Math.atan2(east, north) * 180 / Math.PI), horiz: Math.hypot(east, north) };
   }
 
-  // ---------- Posisjon ----------
+  // ---------- Posisjon (med utjevning når du står stille) ----------
   function startGeolocation() {
     if (!navigator.geolocation) { setStatus('Telefonen støtter ikke posisjon.'); return; }
     navigator.geolocation.watchPosition(
-      (p) => {
-        state.pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy };
-        maybeFetch();
-      },
+      onPosition,
       (err) => {
         setStatus(err.code === 1
           ? 'Ingen tilgang til posisjon. Slå på posisjon for nettleseren.'
           : 'Finner ikke posisjon … (' + err.message + ')');
       },
-      { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
     );
+  }
+
+  let avg = null;   // vektet snitt av målinger mens du står stille: { lat, lon, w, n }
+  function onPosition(p) {
+    const c = p.coords;
+    const acc = Math.max(c.accuracy || 50, 3);
+    const moving = c.speed != null && c.speed > 0.7;
+    const w = 1 / (acc * acc);
+
+    if (!avg || moving || distance(avg.lat, avg.lon, c.latitude, c.longitude) > Math.max(8, acc * 1.5)) {
+      avg = { lat: c.latitude, lon: c.longitude, w, n: 1 };
+    } else {
+      avg.w *= 0.85;                         // eldre målinger teller gradvis mindre
+      const tw = avg.w + w;
+      avg.lat = (avg.lat * avg.w + c.latitude * w) / tw;
+      avg.lon = (avg.lon * avg.w + c.longitude * w) / tw;
+      avg.w = tw;
+      avg.n++;
+    }
+    const estAcc = Math.min(acc, 1 / Math.sqrt(avg.w));
+    state.pos = { lat: avg.lat, lon: avg.lon, acc: estAcc, samples: avg.n };
+
+    autoCalibrateCompass(c);
+    maybeFetch();
+  }
+
+  // ---------- Automatisk kompass-kalibrering ----------
+  // Når du går med kameraet pekende fremover, vet GPS-en hvilken vei du går.
+  // Forskjellen mellom GPS-retning og kompass brukes til å rette opp kompasset.
+  let track = null;          // forrige punkt for å regne ut gangretning
+  const calSamples = [];
+  function autoCalibrateCompass(c) {
+    if (!settings.autoCompass || state.heading == null || !state.upright) { track = null; return; }
+    let course = null;
+    if (c.heading != null && !isNaN(c.heading) && c.speed != null && c.speed > 0.7 && c.speed < 4) {
+      course = c.heading;
+    } else if (c.accuracy < 20) {
+      if (!track) { track = { lat: c.latitude, lon: c.longitude }; return; }
+      const d = distance(track.lat, track.lon, c.latitude, c.longitude);
+      if (d < Math.max(8, c.accuracy)) return;
+      course = bearing(track.lat, track.lon, c.latitude, c.longitude);
+      track = { lat: c.latitude, lon: c.longitude };
+    }
+    if (course == null) return;
+
+    calSamples.push(angleDiff(course, state.heading));
+    if (calSamples.length > 10) calSamples.shift();
+    if (calSamples.length < 5) return;
+
+    // Sirkulært snitt og spredning – bruk bare når målingene er enige
+    let s = 0, k = 0;
+    for (const v of calSamples) { s += Math.sin(toRad(v)); k += Math.cos(toRad(v)); }
+    const R = Math.hypot(s, k) / calSamples.length;
+    if (R < 0.97) return;                                   // ca. ±14° spredning
+    const mean = Math.atan2(s, k) * 180 / Math.PI;
+    if (Math.abs(mean) > 90) return;
+    setOffset(Math.round(mean));
+    settings.calibrated = true;
+    saveSettings();
+    toast('Kompasset er kalibrert ✓');
+    calSamples.length = 0;
+  }
+
+  function setOffset(v) {
+    settings.offset = Math.max(-90, Math.min(90, v));
+    saveSettings();
+    const o = $('offset');
+    if (o) { o.value = settings.offset; $('offsetVal').textContent = (settings.offset > 0 ? '+' : '') + settings.offset; }
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 3000);
+  }
+
+  // ---------- Kameraets synsvinkel ----------
+  // Telefonens hovedkamera har typisk ca. 67° synsvinkel langs den lange siden av bildet.
+  // Videoen beskjæres for å fylle skjermen, så vi regner ut hvor mye av bildet som faktisk vises.
+  function focalPx(W, H) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return (W / 2) / Math.tan(toRad(20));            // før kameraet har startet
+    const fVideo = (Math.max(vw, vh) / 2) / Math.tan(toRad(settings.lensFov / 2)) * (state.zoom || 1);
+    const scale = Math.max(W / vw, H / vh);                           // object-fit: cover
+    return fVideo * scale;
   }
 
   // ---------- Hent adresser ----------
@@ -242,10 +343,8 @@
   let lastDraw = 0;
   function loop(t) {
     requestAnimationFrame(loop);
-    if (t - lastDraw < 66) return;        // ca. 15 bilder i sekundet holder
-    lastDraw = t;
-    if (!state.frozen) draw();
-    updateStatus();
+    if (!state.frozen) draw();               // tegn hvert bilde, så labelene følger kameraet
+    if (t - lastDraw > 250) { lastDraw = t; updateStatus(); }
   }
 
   function currentHeading() {
@@ -277,7 +376,10 @@
       return;
     }
 
-    const half = settings.fov / 2;
+    const W = window.innerWidth, H = window.innerHeight;
+    const f = focalPx(W, H);                                       // brennvidde i skjerm-piksler
+    const half = Math.atan((W / 2) / f) * 180 / Math.PI;           // halve synsvinkelen på skjermen
+    state.screenFov = Math.round(half * 2);
     let items = [];
     for (const a of state.addresses) {
       const dist = distance(state.pos.lat, state.pos.lon, a.lat, a.lon);
@@ -306,8 +408,6 @@
 
     // Plasser labelene der husene faktisk er i bildet (ekte kamera-projeksjon).
     // Pila peker på et punkt ca. 4 m over bakken på huset; øynene/telefonen er ca. 1,5 m over bakken.
-    const W = window.innerWidth, H = window.innerHeight;
-    const f = (W / 2) / Math.tan(toRad(settings.fov / 2));          // brennvidde i piksler
     const pitch = state.pitch || 0;
     const rowH = 50, minY = 120, maxY = H - 130;
     const placed = [];
@@ -348,8 +448,8 @@
       el.lastChild.textContent = Math.round(it.dist) + ' m';
       el.classList.toggle('near', it.dist < 40);
       el.classList.toggle('far', it.dist > settings.radius * 0.66);
-      el.style.left = p.x + 'px';
-      el.style.top = p.y + 'px';
+      const sc = it.dist > settings.radius * 0.66 ? 0.85 : 1;
+      el.style.transform = `translate3d(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px, 0) translate(-50%, -100%) scale(${sc})`;
     }
     for (const el of existing.values()) el.remove();
   }
@@ -362,6 +462,7 @@
     else if (state.fetchedAt && state.addresses.length === 0) s += ' · ingen adresser i nærheten';
     else if (state.fetchedAt) s += ` · ${state.visible.length} av ${state.addresses.length} adresser i bildet`;
     if (acc > 30) s += ' · svak GPS, gå gjerne ut i åpent lende';
+    else if (settings.autoCompass && !settings.calibrated) s += ' · gå noen skritt med kameraet rett frem for å kalibrere kompasset';
     if (state.frozen) s = '❄︎ Frosset · ' + s;
     setStatus(s);
   }
@@ -445,11 +546,11 @@
       const h = currentHeading();
       if (h == null || !state.pos) return;
       const diff = angleDiff(bearing(state.pos.lat, state.pos.lon, a.lat, a.lon), h);
-      settings.offset = Math.round(Math.max(-90, Math.min(90, settings.offset + diff)));
+      setOffset(Math.round(settings.offset + diff));
+      settings.calibrated = true;
       saveSettings();
-      $('offset').value = settings.offset;
-      $('offsetVal').textContent = (settings.offset > 0 ? '+' : '') + settings.offset;
       $('detailPanel').hidden = true;
+      toast('Kompasset er kalibrert ✓');
     });
     body.appendChild(cal);
     openPanel('detailPanel');
@@ -475,13 +576,18 @@
       });
     };
     bind('radius', 'radius');
-    bind('fov', 'fov');
+    bind('lensFov', 'lensFov');
     bind('aim', 'aim');
     bind('offset', 'offset', (v) => (v > 0 ? '+' : '') + v);
+    const ac = $('autoCompass');
+    ac.checked = settings.autoCompass;
+    ac.addEventListener('change', () => { settings.autoCompass = ac.checked; saveSettings(); });
+    $('screenFovVal').textContent = state.screenFov ? state.screenFov + '°' : '–';
     const hb = $('hideBehind');
     hb.checked = settings.hideBehind;
     hb.addEventListener('change', () => { settings.hideBehind = hb.checked; saveSettings(); });
     $('settingsBtn').addEventListener('click', () => {
+      $('screenFovVal').textContent = state.screenFov ? state.screenFov + '°' : '–';
       $('settingsPanel').hidden ? openPanel('settingsPanel') : ($('settingsPanel').hidden = true);
     });
   }
