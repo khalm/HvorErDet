@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <!-- Startskjerm -->
@@ -27,7 +27,7 @@
         Ingenting lagres eller sendes videre, bortsett fra posisjonen som brukes til å slå opp adresser
         i Kartverkets åpne adresseregister.</p>
       <p id="startError" class="error" hidden></p>
-      <p class="version app-version">Versjon 5</p>
+      <p class="version app-version">Versjon 6</p>
     </div>
   </section>
 
@@ -40,6 +40,7 @@
 
     <header id="topbar">
       <div id="status">Finner posisjon …</div>
+      <button id="mapBtn" class="icon" aria-label="Kart">🗺</button>
       <button id="settingsBtn" class="icon" aria-label="Innstillinger">⚙︎</button>
     </header>
 
@@ -56,12 +57,20 @@
     <div id="listPanel" class="panel" hidden>
       <div class="panel-head"><b>Adresser i bildet</b><button class="close" data-close="listPanel">✕</button></div>
       <ol id="addrList"></ol>
+      <button id="listMapBtn" class="primary small-btn">Vis adressene på kart</button>
     </div>
 
     <!-- Detaljer for én adresse -->
     <div id="detailPanel" class="panel" hidden>
       <div class="panel-head"><b id="dTitle"></b><button class="close" data-close="detailPanel">✕</button></div>
       <div id="dBody"></div>
+    </div>
+
+    <!-- Kart -->
+    <div id="mapPanel" class="map-panel" hidden>
+      <div id="map"></div>
+      <p id="mapMsg" class="error" hidden></p>
+      <button class="close map-close" data-close="mapPanel" aria-label="Lukk kart">✕</button>
     </div>
 
     <!-- Innstillinger -->
@@ -81,10 +90,10 @@
       <label class="check"><input type="checkbox" id="hideBehind"> Skjul adresser som ligger bak andre</label>
       <p class="small">Tips: Står pila litt til siden for huset? Trykk på adressen og bruk «Huset er midt i bildet nå», eller juster kompasset her. Peker den for høyt eller lavt? Juster høyden. Kompasset blir
         mer nøyaktig om du beveger telefonen i et åttetall noen ganger.</p>
-      <p class="small"><span class="app-version">Versjon 5</span> · Adressedata: © Kartverket (Matrikkelen). Utenfor Norge: © OpenStreetMap-bidragsytere.</p>
+      <p class="small"><span class="app-version">Versjon 6</span> · Adressedata: © Kartverket (Matrikkelen). Utenfor Norge: © OpenStreetMap-bidragsytere.</p>
     </div>
   </section>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

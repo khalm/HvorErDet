@@ -6,7 +6,7 @@
   'use strict';
 
   // ---------- Innstillinger (lagres lokalt på telefonen) ----------
-  const APP_VERSION = '5';
+  const APP_VERSION = '6';
   const DEFAULTS = { radius: 150, lensFov: 67, offset: 0, hideBehind: true, aim: 4, autoCompass: true, calibrated: false };
   const settings = loadSettings();
 
@@ -546,7 +546,7 @@
     const links = document.createElement('div');
     const q = encodeURIComponent(`${a.title}${a.sub ? ', ' + a.sub : ''}`);
     links.innerHTML =
-      `<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lon}">Vis i kart</a>` +
+      `<a target="_blank" rel="noopener" href="${directionsUrl(a)}">Vis i kart og veibeskrivelse</a>` +
       `<a target="_blank" rel="noopener" href="https://www.google.com/search?q=${q}">Søk på adressen</a>`;
     if (navigator.clipboard) {
       const b = document.createElement('a');
@@ -561,6 +561,12 @@
     body.appendChild(links);
 
     // Kalibrering: pek den stiplede midtlinja på huset, og trykk knappen.
+    const inApp = document.createElement('a');
+    inApp.href = '#';
+    inApp.textContent = 'Vis på kartet her';
+    inApp.addEventListener('click', (e) => { e.preventDefault(); openMap(a.id); });
+    links.appendChild(inApp);
+
     const cal = document.createElement('div');
     cal.className = 'calib';
     cal.innerHTML = '<p class="small">Står adressen feil? Pek den stiplede midtlinja på dette huset og trykk:</p>' +
@@ -579,8 +585,122 @@
     openPanel('detailPanel');
   }
 
+  function directionsUrl(a) {
+    const dest = `${a.lat},${a.lon}`;
+    const params = new URLSearchParams({ api: '1', destination: dest });
+    if (state.pos) params.set('origin', `${state.pos.lat},${state.pos.lon}`);
+    return 'https://www.google.com/maps/dir/?' + params.toString();
+  }
+
+  // ---------- Kart inne i appen (Kartverket, gratis) ----------
+  let leafletLoading = null, map = null, mapLayer = null, didFit = false;
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve();
+    if (leafletLoading) return leafletLoading;
+    leafletLoading = new Promise((resolve, reject) => {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+      const js = document.createElement('script');
+      js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      js.onload = resolve;
+      js.onerror = () => { leafletLoading = null; reject(new Error('Klarte ikke å laste kartet. Sjekk nettet.')); };
+      document.head.appendChild(js);
+    });
+    return leafletLoading;
+  }
+
+  async function openMap(focusId) {
+    openPanel('mapPanel');
+    try { await loadLeaflet(); } catch (e) { $('mapMsg').textContent = e.message; $('mapMsg').hidden = false; return; }
+    $('mapMsg').hidden = true;
+    if (!map) {
+      map = L.map('map', { zoomControl: true, attributionControl: true });
+      const kv = L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png',
+        { maxZoom: 19, maxNativeZoom: 18, attribution: '© Kartverket' });
+      const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { maxZoom: 19, attribution: '© OpenStreetMap-bidragsytere' });
+      kv.addTo(map);
+      L.control.layers({ 'Kartverket': kv, 'OpenStreetMap': osm }, null, { position: 'topright' }).addTo(map);
+      mapLayer = L.layerGroup().addTo(map);
+      map.setView(state.pos ? [state.pos.lat, state.pos.lon] : [65, 13], state.pos ? 17 : 4);
+      didFit = false;
+    }
+    setTimeout(() => { map.invalidateSize(); drawMap(focusId); }, 50);
+  }
+
+  function drawMap(focusId) {
+    if (!map) return;
+    mapLayer.clearLayers();
+    const visibleIds = new Set(state.visible.map((v) => v.a.id));
+    const order = [...state.visible].sort((x, y) => x.diff - y.diff).map((v) => v.a.id);
+    const bounds = [];
+
+    // Hvilken vei kameraet peker (kjegle)
+    const h = currentHeading();
+    if (state.pos && h != null) {
+      const half = (state.screenFov || 40) / 2, r = settings.radius;
+      const pts = [[state.pos.lat, state.pos.lon]];
+      for (let a = -half; a <= half; a += half / 6) pts.push(destPoint(state.pos.lat, state.pos.lon, h + a, r));
+      L.polygon(pts, { color: '#f59e0b', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(mapLayer);
+    }
+
+    // Alle adresser rundt deg: grå. Adressene i bildet/lista: oransje med nummer.
+    for (const a of state.addresses) {
+      const inView = visibleIds.has(a.id);
+      const popup = popupHtml(a);
+      if (inView) {
+        const n = order.indexOf(a.id) + 1;
+        const m = L.marker([a.lat, a.lon], {
+          icon: L.divIcon({ className: 'map-num' + (a.id === focusId ? ' focus' : ''), html: String(n), iconSize: [26, 26] }),
+          zIndexOffset: 500,
+        }).bindPopup(popup).addTo(mapLayer);
+        bounds.push([a.lat, a.lon]);
+        if (a.id === focusId) setTimeout(() => m.openPopup(), 100);
+      } else {
+        L.circleMarker([a.lat, a.lon], { radius: 4, color: '#64748b', weight: 1, fillOpacity: 0.7 })
+          .bindPopup(popup).addTo(mapLayer);
+      }
+    }
+
+    // Din posisjon
+    if (state.pos) {
+      L.circle([state.pos.lat, state.pos.lon], { radius: state.pos.acc, color: '#3b82f6', weight: 1, fillOpacity: 0.1, interactive: false }).addTo(mapLayer);
+      L.circleMarker([state.pos.lat, state.pos.lon], { radius: 8, color: '#fff', weight: 3, fillColor: '#3b82f6', fillOpacity: 1 })
+        .bindPopup('Du er her').addTo(mapLayer);
+      bounds.push([state.pos.lat, state.pos.lon]);
+    }
+
+    const focus = focusId && state.addresses.find((x) => x.id === focusId);
+    if (focus) {
+      map.setView([focus.lat, focus.lon], 18);
+    } else if (!didFit && bounds.length > 1) {
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+      didFit = true;
+    }
+  }
+
+  function popupHtml(a) {
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const dist = state.pos ? Math.round(distance(state.pos.lat, state.pos.lon, a.lat, a.lon)) + ' m unna' : '';
+    return `<b>${esc(a.title)}</b><br><small>${esc(a.sub || '')}${a.sub && dist ? ' · ' : ''}${dist}</small><br>` +
+      `<a target="_blank" rel="noopener" href="${directionsUrl(a)}">Veibeskrivelse i Google Maps</a>`;
+  }
+
+  // Punkt et gitt antall meter unna i en gitt retning
+  function destPoint(lat, lon, brg, dist) {
+    const R = 6371000, d = dist / R, b = toRad(brg), p1 = toRad(lat), l1 = toRad(lon);
+    const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
+    const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+    return [p2 * 180 / Math.PI, l2 * 180 / Math.PI];
+  }
+
+  $('mapBtn').addEventListener('click', () => openMap());
+  $('listMapBtn').addEventListener('click', () => openMap());
+
   function openPanel(id) {
-    for (const p of ['listPanel', 'detailPanel', 'settingsPanel']) $(p).hidden = p !== id;
+    for (const p of ['listPanel', 'detailPanel', 'settingsPanel', 'mapPanel']) $(p).hidden = p !== id;
   }
   document.querySelectorAll('[data-close]').forEach((b) =>
     b.addEventListener('click', () => { $(b.dataset.close).hidden = true; }));
