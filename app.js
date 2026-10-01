@@ -6,7 +6,7 @@
   'use strict';
 
   // ---------- Innstillinger (lagres lokalt på telefonen) ----------
-  const DEFAULTS = { radius: 150, fov: 55, offset: 0, hideBehind: true };
+  const DEFAULTS = { radius: 150, fov: 55, offset: 0, hideBehind: true, aim: 4 };
   const settings = loadSettings();
 
   function loadSettings() {
@@ -21,6 +21,7 @@
   const state = {
     pos: null,            // { lat, lon, acc }
     heading: null,        // grader, 0 = nord (rå, før justering)
+    pitch: null,          // grader over (+) / under (−) horisonten
     upright: true,        // holdes telefonen oppreist?
     addresses: [],        // [{ id, title, sub, lat, lon, raw }]
     fetchedAt: null,      // { lat, lon, radius } for siste oppslag
@@ -119,6 +120,12 @@
       state.upright = r.horiz > 0.45;
     }
     if (h == null || isNaN(h)) return;
+
+    // Vipping opp/ned: vinkelen kameraet peker over (+) eller under (−) horisonten.
+    // Kameraets z-komponent i verden er −cos(beta)·cos(gamma).
+    const d = Math.PI / 180;
+    const p = Math.asin(Math.max(-1, Math.min(1, -Math.cos(beta * d) * Math.cos(gamma * d)))) / d;
+    state.pitch = state.pitch == null ? p : state.pitch * 0.8 + p * 0.2;
 
     // Glatt ut retningen (sirkulært gjennomsnitt) så labelene ikke hopper
     const rad = h * Math.PI / 180;
@@ -297,21 +304,29 @@
     items.sort((x, y) => x.diff - y.diff);
     state.visible = items;
 
-    // Plasser labelene i rader så de ikke overlapper
+    // Plasser labelene der husene faktisk er i bildet (ekte kamera-projeksjon).
+    // Pila peker på et punkt ca. 4 m over bakken på huset; øynene/telefonen er ca. 1,5 m over bakken.
     const W = window.innerWidth, H = window.innerHeight;
-    // Nærmeste adresser havner nederst (rad 0), de bakenforliggende stables oppover.
-    const rows = [];
-    const rowH = 54, bottom = H - 150, maxRows = Math.max(1, Math.floor((bottom - 90) / rowH));
+    const f = (W / 2) / Math.tan(toRad(settings.fov / 2));          // brennvidde i piksler
+    const pitch = state.pitch || 0;
+    const rowH = 50, minY = 120, maxY = H - 130;
+    const placed = [];
     const byNear = [...items].sort((x, y) => x.dist - y.dist);
     const pos = new Map();
     for (const it of byNear) {
-      const x = W / 2 + (it.diff / settings.fov) * W;
+      const x = W / 2 + f * Math.tan(toRad(it.diff));
+      const elev = Math.atan2(settings.aim - 1.5, Math.max(it.dist, 3)) * 180 / Math.PI;
+      let y = H / 2 - f * Math.tan(toRad(elev - pitch));
+      y = Math.min(maxY, Math.max(minY, y));
       const w = Math.min(220, 24 + it.a.title.length * 8.5);
-      let r = 0;
-      while (r < maxRows && (rows[r] || []).some((o) => Math.abs(o.x - x) < (o.w + w) / 2 + 6)) r++;
-      if (r >= maxRows) continue;
-      (rows[r] = rows[r] || []).push({ x, w });
-      pos.set(it.a.id, { x, y: bottom - r * rowH });
+      // Overlapper den med en nærmere label? Flytt den oppover til det er plass.
+      let tries = 0;
+      while (tries < 8 && placed.some((o) => Math.abs(o.x - x) < (o.w + w) / 2 + 6 && Math.abs(o.y - y) < rowH)) {
+        y -= rowH; tries++;
+      }
+      if (y < 70) continue;
+      placed.push({ x, y, w });
+      pos.set(it.a.id, { x, y });
     }
 
     // Gjenbruk eksisterende label-elementer for jevn animasjon
@@ -444,6 +459,7 @@
     };
     bind('radius', 'radius');
     bind('fov', 'fov');
+    bind('aim', 'aim');
     bind('offset', 'offset', (v) => (v > 0 ? '+' : '') + v);
     const hb = $('hideBehind');
     hb.checked = settings.hideBehind;
