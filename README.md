@@ -22,7 +22,8 @@ Appen bruker telefonens GPS og kompass til å finne ut hvor du står og hvilken 
 Så henter den adressepunkter rundt deg fra Kartverkets åpne adresse-API
 (`ws.geonorge.no/adresser`, gratis og uten nøkkel) og viser de som ligger innenfor kameraets synsfelt.
 
-Virker kun i Norge. Nøyaktigheten avhenger av GPS og kompass. Står labelene litt skjevt, kan du
+Virker best i Norge. Utenfor Norge hentes adresser fra OpenStreetMap, som er mindre komplett.
+Nøyaktigheten avhenger av GPS og kompass. Står labelene litt skjevt, kan du
 justere kompasset under ⚙︎ Innstillinger.
 
 ## Teknisk
@@ -30,4 +31,4 @@ justere kompasset under ⚙︎ Innstillinger.
 Ren HTML/CSS/JavaScript uten byggesteg. Hver gang noe blir pushet til `main`, publiserer
 GitHub Actions appen til GitHub Pages automatisk (`.github/workflows/pages.yml`).
 
-Adressedata © Kartverket.
+Adressedata © Kartverket og © OpenStreetMap-bidragsytere.

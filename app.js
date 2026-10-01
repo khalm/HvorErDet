@@ -1,6 +1,6 @@
 /* HvorErDet – pek kameraet på hus og se adressene.
  * Bruker: kamera, GPS og kompass i telefonen + Kartverkets åpne adresse-API (gratis, ingen nøkkel).
- * Virker kun i Norge.
+ * Virker best i Norge. Utenfor Norge brukes OpenStreetMap som reserve.
  */
 (() => {
   'use strict';
@@ -174,7 +174,9 @@
     const { lat, lon } = state.pos;
     const radius = settings.radius;
     try {
-      state.addresses = await fetchKartverket(lat, lon, radius);
+      let list = await fetchKartverket(lat, lon, radius);
+      if (list.length === 0) list = await fetchOSM(lat, lon, radius);   // utenfor Norge
+      state.addresses = list;
       state.fetchedAt = { lat, lon, radius };
     } catch (e) {
       console.error(e);
@@ -203,6 +205,30 @@
         lon: a.representasjonspunkt.lon,
         raw: a,
       }));
+  }
+
+  // Reserve utenfor Norge: adresser fra OpenStreetMap (gratis, men mindre komplett)
+  async function fetchOSM(lat, lon, radius) {
+    const r = Math.round(radius);
+    const q = `[out:json][timeout:20];(node["addr:housenumber"](around:${r},${lat},${lon});` +
+              `way["addr:housenumber"](around:${r},${lat},${lon}););out center 500;`;
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: 'data=' + encodeURIComponent(q),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    if (!res.ok) throw new Error('OpenStreetMap svarte ' + res.status);
+    const json = await res.json();
+    return (json.elements || []).map((el) => {
+      const t = el.tags || {};
+      const p = el.type === 'node' ? el : el.center;
+      if (!p) return null;
+      return {
+        id: 'osm' + el.type + el.id,
+        title: [t['addr:street'] || t['addr:place'] || '', t['addr:housenumber']].join(' ').trim(),
+        sub: [t['addr:postcode'], t['addr:city']].filter(Boolean).join(' '),
+        lat: p.lat, lon: p.lon, raw: t,
+      };
+    }).filter(Boolean);
   }
 
   // ---------- Tegning ----------
@@ -318,7 +344,7 @@
     const acc = Math.round(state.pos.acc);
     let s = `GPS ±${acc} m`;
     if (state.fetching) s += ' · henter adresser …';
-    else if (state.fetchedAt && state.addresses.length === 0) s += ' · ingen adresser i nærheten (kun Norge)';
+    else if (state.fetchedAt && state.addresses.length === 0) s += ' · ingen adresser i nærheten';
     else if (state.fetchedAt) s += ` · ${state.visible.length} av ${state.addresses.length} adresser i bildet`;
     if (acc > 30) s += ' · svak GPS, gå gjerne ut i åpent lende';
     if (state.frozen) s = '❄︎ Frosset · ' + s;
