@@ -6,7 +6,7 @@
   'use strict';
 
   // ---------- Innstillinger (lagres lokalt på telefonen) ----------
-  const APP_VERSION = '4';
+  const APP_VERSION = '5';
   const DEFAULTS = { radius: 150, lensFov: 67, offset: 0, hideBehind: true, aim: 4, autoCompass: true, calibrated: false };
   const settings = loadSettings();
 
@@ -52,6 +52,7 @@
     }
     startOrientation();
     startGeolocation();
+    detectPhone();
     $('start').hidden = true;
     $('cam').hidden = false;
     initSettingsUI();
@@ -255,6 +256,28 @@
     el.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.hidden = true; }, 3000);
+  }
+
+  // ---------- Telefongjenkjenning ----------
+  // Kjente telefoner: hovedkameraets synsvinkel langs den lange siden av bildet (grader).
+  // Produsenter oppgir som regel diagonal synsvinkel; den er regnet om for et 4:3-bilde.
+  const PHONE_CAMERAS = [
+    { match: /Pixel 10 Pro/i, name: 'Pixel 10 Pro', lensFov: 70 },   // 82° diagonal (Google)
+  ];
+
+  async function detectPhone() {
+    try {
+      if (!navigator.userAgentData || !navigator.userAgentData.getHighEntropyValues) return;
+      const { model } = await navigator.userAgentData.getHighEntropyValues(['model']);
+      if (!model) return;
+      state.phoneModel = model;
+      const known = PHONE_CAMERAS.find((p) => p.match.test(model));
+      if (known) {
+        state.phoneModel = known.name;
+        state.phoneKnown = true;
+        if (!settings.lensFovManual) settings.lensFov = known.lensFov;
+      }
+    } catch { /* ikke tilgjengelig */ }
   }
 
   // ---------- Kameraets synsvinkel ----------
@@ -573,6 +596,7 @@
         out.textContent = fmt(settings[key]);
         saveSettings();
         if (key === 'radius') maybeFetch();
+        if (key === 'lensFov') settings.lensFovManual = true;
       });
     };
     bind('radius', 'radius');
@@ -588,6 +612,11 @@
     hb.addEventListener('change', () => { settings.hideBehind = hb.checked; saveSettings(); });
     $('settingsBtn').addEventListener('click', () => {
       $('screenFovVal').textContent = state.screenFov ? state.screenFov + '°' : '–';
+      $('lensFov').value = settings.lensFov;
+      $('lensFovVal').textContent = settings.lensFov;
+      $('phoneVal').textContent = state.phoneModel
+        ? state.phoneModel + (state.phoneKnown ? ' (kameraet er kjent)' : ' (ukjent kamera, bruker standard)')
+        : 'ukjent';
       $('settingsPanel').hidden ? openPanel('settingsPanel') : ($('settingsPanel').hidden = true);
     });
   }
