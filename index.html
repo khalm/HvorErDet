@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
   <!-- Startskjerm -->
@@ -72,14 +72,14 @@
       <label>Høyde på husene pila peker på: <span id="aimVal"></span> m
         <input type="range" id="aim" min="1" max="20" step="0.5"></label>
       <label>Kompass-justering: <span id="offsetVal"></span>°
-        <input type="range" id="offset" min="-45" max="45" step="1"></label>
+        <input type="range" id="offset" min="-90" max="90" step="1"></label>
       <label class="check"><input type="checkbox" id="hideBehind"> Skjul adresser som ligger bak andre</label>
       <p class="small">Tips: Står pila litt til siden for huset? Juster kompasset. Peker den for høyt eller lavt? Juster høyden. Kompasset blir
         mer nøyaktig om du beveger telefonen i et åttetall noen ganger.</p>
-      <p class="small">Adressedata: © Kartverket (Matrikkelen). Utenfor Norge: © OpenStreetMap-bidragsytere.</p>
+      <p class="small">Versjon 3 · Adressedata: © Kartverket (Matrikkelen). Utenfor Norge: © OpenStreetMap-bidragsytere.</p>
     </div>
   </section>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

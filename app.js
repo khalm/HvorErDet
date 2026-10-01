@@ -435,6 +435,23 @@
       links.appendChild(b);
     }
     body.appendChild(links);
+
+    // Kalibrering: pek den stiplede midtlinja på huset, og trykk knappen.
+    const cal = document.createElement('div');
+    cal.className = 'calib';
+    cal.innerHTML = '<p class="small">Står adressen feil? Pek den stiplede midtlinja på dette huset og trykk:</p>' +
+      '<button class="primary small-btn">Huset er midt i bildet nå</button>';
+    cal.querySelector('button').addEventListener('click', () => {
+      const h = currentHeading();
+      if (h == null || !state.pos) return;
+      const diff = angleDiff(bearing(state.pos.lat, state.pos.lon, a.lat, a.lon), h);
+      settings.offset = Math.round(Math.max(-90, Math.min(90, settings.offset + diff)));
+      saveSettings();
+      $('offset').value = settings.offset;
+      $('offsetVal').textContent = (settings.offset > 0 ? '+' : '') + settings.offset;
+      $('detailPanel').hidden = true;
+    });
+    body.appendChild(cal);
     openPanel('detailPanel');
   }
 

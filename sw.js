@@ -1,7 +1,7 @@
 // Enkel service worker: gjør at appen kan installeres og starter raskt.
 // Adresseoppslag går alltid mot nettet (Kartverket).
-const CACHE = 'hvorerdet-v2';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
+const CACHE = 'hvorerdet-v3';
+const FILES = ['./', 'index.html', 'style.css?v=3', 'app.js?v=3', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -20,7 +20,7 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;   // API-kall går rett til nettet
   // Nett først (så du alltid får nyeste versjon), cache som reserve
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-store' })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));
