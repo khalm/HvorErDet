@@ -131,3 +131,16 @@ h1 { margin: 12px 0 8px; font-size: 32px; }
 .leaflet-popup-content a { font-weight: 600; }
 #listMapBtn { margin-top: 14px; width: 100%; }
 #topbar .icon + .icon { margin-left: 0; }
+
+.map-tools {
+  position: absolute; z-index: 1000; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap;
+  gap: 8px; justify-content: center; padding: 12px; padding-bottom: max(18px, env(safe-area-inset-bottom));
+}
+.map-tools .pill { background: var(--bg); color: var(--fg); box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+.map-tools .pill.active { background: var(--accent); color: #111; }
+.map-hint {
+  width: 100%; text-align: center; margin: 0; background: var(--card); color: var(--fg);
+  padding: 8px 12px; border-radius: 10px; font-size: 14px;
+}
+.lbl.approx { border-style: dashed; }
+#resetCal { margin: 4px 0 6px; }

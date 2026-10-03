@@ -18,13 +18,18 @@ Pek kameraet på hus, så viser appen adressene til husene i bildet.
 
 ## Hvordan det virker
 
-Appen bruker telefonens GPS og kompass til å finne ut hvor du står og hvilken vei kameraet peker.
-Så henter den adressepunkter rundt deg fra Kartverkets åpne adresse-API
-(`ws.geonorge.no/adresser`, gratis og uten nøkkel) og viser de som ligger innenfor kameraets synsfelt.
+1. GPS og kompass sier hvor du står og hvilken vei kameraet peker.
+2. Adressene hentes fra Kartverkets åpne adresse-API (Matrikkelen).
+3. Husomriss hentes fra OpenStreetMap (i Norge importert fra Matrikkelen), og terrenghøyde
+   fra Kartverkets høydemodell (1 m oppløsning).
+4. Hver adresse kobles til huset sitt. Appen sender stråler ut fra der du står og regner ut hvilke hus
+   du faktisk ser – hus bak andre hus skjules, mens hus oppe i en li vises – og setter adressen midt på fasaden.
 
-Virker best i Norge. Utenfor Norge hentes adresser fra OpenStreetMap, som er mindre komplett.
-Nøyaktigheten avhenger av GPS og kompass. Står labelene litt skjevt, kan du
-justere kompasset under ⚙︎ Innstillinger.
+### Når det ikke treffer helt
+- **Dra labelene** med fingeren til de står på riktig hus (sidelengs = kompass, opp/ned = vipping).
+  Frys bildet først, så er det lettere. Justeringen huskes.
+- **Unøyaktig GPS?** Trykk 🗺 og «📍 Jeg står her», og trykk på kartet der du står.
+- **På balkong / i 2. etasje?** Øk «Øyehøyde over bakken» under ⚙︎.
 
 ## Teknisk
 
