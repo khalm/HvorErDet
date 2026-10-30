@@ -12,7 +12,7 @@
   'use strict';
 
   // ---------- Innstillinger (lagres lokalt på telefonen) ----------
-  const APP_VERSION = '7';
+  const APP_VERSION = '8';
   const DEFAULTS = {
     radius: 150, lensFov: 67, offset: 0, pitchOffset: 0, hideBehind: true, aim: 4, eyeH: 1.6,
     autoCompass: true, calibrated: false, dragHintShown: false,
