@@ -1,6 +1,6 @@
 // Enkel service worker: gjør at appen kan installeres og starter raskt.
 // Adresseoppslag går alltid mot nettet (Kartverket).
-const CACHE = 'hvorerdet-v8';
+const CACHE = 'hvorerdet-v9';
 const FILES = ['./', 'index.html', 'style.css?v=7', 'app.js?v=7', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
